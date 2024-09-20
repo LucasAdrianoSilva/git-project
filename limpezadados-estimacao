@@ -1,1 +1,574 @@
 Organização dos dados e algumas estimações.
+
+# Inicialmente, quais os códigos do setor de mineração?
+# As classificações das CNAEs, subsetores do IBGE e outras coisas, estão em:
+# https://basedosdados.org/dataset/33b49786-fb5f-496f-bb7c-9811c985af8e?table=0a2d8187-f936-437d-89db-b4eb3a7e1735
+# Olhando informações para Ouro Preto(como exemplo)
+
+```{r}
+
+#dicionario
+dic<-basedosdados::read_sql('SELECT * 
+FROM `basedosdados.br_me_rais.dicionario`
+                                ')
+
+
+# ouro preto em 2022 pra ter uma ideia de como é a base
+op2022<-basedosdados::read_sql('SELECT * 
+FROM `basedosdados.br_me_rais.microdados_estabelecimentos`
+WHERE id_municipio = "3146107"
+AND ano = 2022
+                                ')
+
+op1985<-basedosdados::read_sql('SELECT * 
+FROM `basedosdados.br_me_rais.microdados_estabelecimentos`
+WHERE id_municipio = "3146107"
+AND ano = 1985
+                                ')
+
+
+cnae1<-basedosdados::read_sql('SELECT * FROM `basedosdados.br_bd_diretorios_brasil.cnae_1`')
+
+cnae2<-basedosdados::read_sql('SELECT * FROM `basedosdados.br_bd_diretorios_brasil.cnae_2`')
+
+cbo1994<-basedosdados::read_sql('SELECT * FROM `basedosdados.br_bd_diretorios_brasil.cbo_1994`')
+
+cbo2002<-basedosdados::read_sql('SELECT * FROM `basedosdados.br_bd_diretorios_brasil.cbo_2002`')
+
+
+```
+
+A estrutura dos dados muda. Em 1985 o subsetor_ibge não é pelo número (01), mas pelo nome "EXTR MINERAL".
+
+Olhando a base de vínculos.
+
+```{r}
+op<-basedosdados::read_sql('SELECT * 
+FROM `basedosdados.br_me_rais.microdados_estabelecimentos`
+WHERE id_municipio = "3146107"
+                                ')
+
+opv1985<-basedosdados::read_sql('SELECT * 
+FROM `basedosdados.br_me_rais.microdados_vinculos`
+WHERE id_municipio = "3146107"
+AND ano=1985
+                                ')
+
+opv2022<-basedosdados::read_sql('SELECT * 
+FROM `basedosdados.br_me_rais.microdados_vinculos`
+WHERE id_municipio = "3146107"
+AND ano=2022
+                                ')
+```
+
+## Coletando os dados
+
+Primeiro vamos coletar os dados para todos os setores das cidades
+
+```{r}
+rt<-basedosdados::read_sql('SELECT ano,
+id_municipio, 
+COUNT(*) AS empregos, 
+SUM(valor_remuneracaO_media_sm) as w_massa,
+AVG(valor_remuneracaO_media_sm) as w_mean_sm,
+AVG(tempo_emprego) as w_tempo,
+AVG(CAST(faixa_etaria as FLOAT64)) as w_faixa_etaria_media,
+FROM `basedosdados.br_me_rais.microdados_vinculos`
+GROUP BY ano, id_municipio
+ORDER BY ano, id_municipio
+                                ')
+```
+
+Agora a gente que fazer isso só para a mineração
+
+Ou seja, a gente tem que aplicar o "WHERE" nos lugares certos... e aqui que começa a confusão!
+
+## Como que é o valor do subsetor da mineração em relação ao Brasil?
+
+```{r}
+pv1 <- basedosdados::read_sql('
+  SELECT 
+    ano,
+    COUNT(*) AS empregos_mineracao
+  FROM `basedosdados.br_me_rais.microdados_vinculos`
+  WHERE subsetor_ibge = "1" OR subsetor_ibge = "01"
+  GROUP BY ano
+  ORDER BY ano
+')
+
+ggplot(pv1, aes(y=as.numeric(empregos_mineracao/1000), x=as.numeric(ano))) + geom_line() + geom_point() +  theme_minimal() + labs(x="", y="Empregos mineração, milhares, subsetor = 1")
+
+
+
+```
+
+Como parece ter uma descontinuidade entre 1994 e 2014, a gente tem que ver o que acontece nestes anos.
+
+```{r}
+opv1994<-basedosdados::read_sql('SELECT * 
+FROM `basedosdados.br_me_rais.microdados_vinculos`
+WHERE id_municipio = "3146107"
+AND ano=1994
+                                ')
+```
+
+Os dados do subsetor_ibge somem. Ou seja, a gente tem que fazer o filtro pela CNAE mesmo.\
+Mais trabalhoso, mas vai ficar melhor.
+
+As CNAES de interesse são:
+
+CNAE1
+
+13218 – extração de alumío
+
+13102 – extração de ferro
+
+13242 – extração de ouro (minério de metais preciosos)
+
+13293 – extração de metálicos não-ferrosos (cobre)
+
+CNAE2
+
+07103 – Extração de ferro
+
+07243 – Extração de minério de metais preciosos
+
+07294 – Extração de minerais metálicos não-ferrosos
+
+07219 – Extração de minério de alumínio
+
+```{r}
+apv7 <- basedosdados::read_sql('
+  SELECT 
+    ano,
+    COUNT(*) AS empregos_mineracao
+  FROM `basedosdados.br_me_rais.microdados_vinculos`
+  WHERE cnae_1 IN ("13218", "13102", "13242", "13293") 
+     OR cnae_2 IN ("07103", "07243", "07294", "07219")
+     OR subatividade_ibge IN ("0510")
+  GROUP BY ano
+  ORDER BY ano
+')
+
+
+ggplot(apv7, aes(y=as.numeric(empregos_mineracao/1000), x=as.numeric(ano))) + geom_line(size=1.05, color="darkred") + geom_point(size=1.5, color="darkred") +  theme_minimal() + labs(x="", y="Thousands of Jobs")
+
+```
+
+A gente precisou de 3 critérios porque cada ano está informado de um jeito. Um informa por CNA1, outro por CNAE2, outro por subatividade do IBGE.
+
+## Mineraçao-Empregos (Cidade-ano)
+
+```{r}
+mi<-basedosdados::read_sql('SELECT ano,
+id_municipio, 
+COUNT(*) AS empregos_m, 
+SUM(valor_remuneracaO_media_sm) as w_massa_m,
+AVG(valor_remuneracaO_media_sm) as w_mean_sm_m,
+AVG(tempo_emprego) as w_tempo_m,
+AVG(CAST(faixa_etaria as FLOAT64)) as w_faixa_etaria_media_m,
+FROM `basedosdados.br_me_rais.microdados_vinculos`
+ WHERE cnae_1 IN ("13218", "13102", "13242", "13293") 
+     OR cnae_2 IN ("07103", "07243", "07294", "07219")
+     OR subatividade_ibge IN ("0510")
+GROUP BY ano, id_municipio
+ORDER BY ano, id_municipio
+                                ')
+```
+
+Acho que tá bem de acordo porque as cidades que mais empregam são Itabira-MG, Paraupebas-PA e Nova-Lima, todas com entre 10 e 15mil pessoas alocadas à atividade mineradora.
+
+Salvar, porque descobrimos que a trabalhar com a RAIS come os meus créditos do Google Cloud.
+
+```{r}
+save.image("rais_mineracao_1.RData")
+```
+
+# Carregando o que foi gerado
+
+```{r}
+load("rais_mineracao_1.RData")
+
+save(mi, file = "mi.Rda")
+save(rt, file = "rt.Rda")
+
+```
+
+Indústria de Transformação
+
+```{r}
+
+trans <- basedosdados::read_sql('
+SELECT 
+  ano,
+  id_municipio, 
+  COUNT(*) AS empregos_trans, 
+  SUM(valor_remuneracaO_media_sm) AS w_massa_trans,
+  AVG(valor_remuneracaO_media_sm) AS w_mean_sm_trans,
+  AVG(tempo_emprego) AS w_tempo_trans,
+  AVG(CAST(faixa_etaria AS FLOAT64)) AS w_faixa_etaria_media_trans
+FROM 
+  `basedosdados.br_me_rais.microdados_vinculos`
+WHERE 
+  cnae_1 IN (
+    "15130", "15148", "15113", "15121", "15210", "15229", "15237", "15318", "15326", "15334", 
+    "15431", "15423", "15415", "15598", "15539", "15563", "15520", "15512", "15555", "15547", 
+    "15610", "15628", "15717", "15725", "15849", "15857", "15890", "15822", "15830", "15865", 
+    "15814", "15920", "15946", "15954", "15911", "15938", "16004", "17116", "17191", "17221", 
+    "17248", "17230", "17213", "17329", "17337", "17310", "17493", "17418", "17507", "17612", 
+    "17698", "17639", "17647", "17620", "17795", "17710", "17728", "18120", "18112", "18139", 
+    "18210", "18228", "19100", "19216", "19291", "19399", "19321", "19313", "19330", "20109", 
+    "20214", "20290", "20222", "20230", "21105", "21210", "21229", "21318", "21326", "21490", 
+    "21415", "21423", "22187", "22160", "22152", "22195", "22144", "22179", "22225", "22217", 
+    "22292", "22314", "22322", "22349", "23108", "23213", "23299", "23302", "23400", "24139", 
+    "24120", "24198", "24112", "24147", "24228", "24210", "24295", "24333", "24325", "24317", 
+    "24414", "24422", "24511", "24546", "24520", "24538", "24694", "24627", "24619", "24635", 
+    "24732", "24724", "24716", "24821", "24813", "24830", "24937", "24961", "24953", "24996", 
+    "24910", "24929", "24945", "25119", "25194", "25127", "25291", "25224", "25216", "26123", 
+    "26115", "26190", "26204", "26301", "26417", "26492", "26425", "26921", "26999", "26913", 
+    "27146", "27138", "27251", "27260", "27243", "27235", "27391", "27316", "27499", "27413", 
+    "27421", "27529", "27510", "28134", "28118", "28126", "28223", "28215", "28398", "28312", 
+    "28347", "28320", "28339", "28436", "28410", "28428", "28819", "28827", "28916", "28932", 
+    "28991", "28924", "29114", "29157", "29130", "29149", "29122", "29246", "29211", "29254", 
+    "29220", "29238", "29297", "29327", "29319", "29408", "29548", "29521", "29530", "29513", 
+    "29645", "29653", "29610", "29629", "29637", "29696", "29718", "29726", "29815", "29890", 
+    "29955", "29963", "29912", "29947", "29939", "29920", "30112", "30120", "30210", "30228", 
+    "31119", "31127", "31135", "31224", "31216", "31305", "31410", "31429", "31518", "31526", 
+    "31607", "31895", "31828", "31810", "31917", "31992", "31925", "32107", "32220", "32212", 
+    "32301", "32905", "33103", "33200", "33308", "33405", "33502", "33928", "33910", "33944", 
+    "33936", "34100", "34207", "34398", "34312", "34320", "34428", "34436", "34495", "34410", 
+    "34444", "34509", "35122", "35114", "35211", "35238", "35220", "35327", "35319", "35912", 
+    "35920", "35998", "36129", "36137", "36110", "36145", "36927", "36935", "36994", "36919", 
+    "36978", "36943", "36951", "36960", "37109", "37206"
+  ) 
+  OR cnae_2 IN (
+    "10112", "10121", "10139", "10201", "10333", "10317", "10325", "10414", "10431", "10422", 
+    "10520", "10538", "10511", "10627", "10694", "10635", "10660", "10651", "10619", "10643", 
+    "10724", "10716", "10821", "10813", "10945", "10937", "10929", "10911", "10961", "10953", 
+    "10996", "11127", "11135", "11119", "11216", "11224", "12107", "12204", "13138", "13120", 
+    "13146", "13111", "13227", "13235", "13219", "13308", "13405", "13511", "13529", "13545", 
+    "13596", "13537", "14126", "14134", "14142", "14118", "14223", "14215", "15106", "15297", 
+    "15211", "15394", "15335", "15327", "15319", "15408", "16102", "16218", "16234", "16226", 
+    "16293", "17109", "17222", "17214", "17311", "17320", "17338", "17494", "17419", "17427", 
+    "18121", "18113", "18130", "18211", "18229", "18300", "19101", "19225", "19217", "19322", 
+    "19314", "20126", "20193", "20134", "20118", "20142", "20215", "20291", "20223", "20321", 
+    "20339", "20312", "20401", "20517", "20525", "20614", "20631", "20622", "20720", "20711", 
+    "20738", "20932", "20916", "20941", "20924", "20991", "21106", "21220", "21211", "21238", 
+    "22129", "22111", "22196", "22234", "22293", "22226", "22218", "23125", "23192", "23117", 
+    "23206", "23303", "23419", "23427", "23494", "23915", "23923", "23991", "24113", "24121", 
+    "24229", "24237", "24211", "24245", "24318", "24393", "24415", "24423", "24491", "24431", 
+    "24512", "24521", "25136", "25110", "25128", "25217", "25225", "25314", "25390", "25322", 
+    "25411", "25420", "25438", "25501", "25934", "25918", "25926", "25993", "26108", "26213", 
+    "26221", "26311", "26329", "26400", "26515", "26523", "26604", "26701", "26809", "27104", 
+    "27210", "27228", "27317", "27333", "27325", "27406", "27511", "27597", "27902", "28135", 
+    "28127", "28119", "28143", "28151", "28291", "28224", "28259", "28232", "28241", "28216", 
+    "28330", "28313", "28321", "28402", "28534", "28526", "28518", "28542", "28615", "28658", 
+    "28631", "28666", "28623", "28691", "28640", "29107", "29204", "29301", "29450", "29417", 
+    "29492", "29441", "29425", "29433", "29506", "30113", "30121", "30318", "30326", "30423", 
+    "30415", "30504", "30997", "30911", "30920", "31012", "31021", "31047", "31039", "32124", 
+    "32116", "32205", "32302", "32400", "32507", "32990", "32922", "32914", "33198", "33121", 
+    "33112", "33147", "33171", "33139", "33163", "33155", "33210", "33295"
+  )
+    OR subatividade_ibge IN ("1100","2510","1250","2410","2060")
+GROUP BY 
+  ano, id_municipio
+ORDER BY 
+  ano, id_municipio
+')
+
+save(trans, file="empregos_industria_transformacao.Rda")
+```
+
+# Lucas
+
+\
+Por favor, conferir o código e fazer o painel acima separado por substância: ouro, ferro, bauxita e cobre.
+
+A separação não vai ser tão clara, mas tá tranquilo.
+
+```{r}
+
+
+# extração de aluminio: 13218(CNAE1), 07219(CNAE2)
+apv7_aluminio <- basedosdados::read_sql('
+  SELECT 
+    ano,
+    COUNT(*) AS empregos_mineracao
+  FROM `basedosdados.br_me_rais.microdados_vinculos`
+  WHERE cnae_1 IN ("13218") 
+     OR cnae_2 IN ("07219")
+  GROUP BY ano
+  ORDER BY ano
+')
+
+
+# extração de cobre: 13293(CNAE1), 07294(CNAE2)
+apv7_cobre <- basedosdados::read_sql('
+  SELECT 
+    ano,
+    COUNT(*) AS empregos_mineracao
+  FROM `basedosdados.br_me_rais.microdados_vinculos`
+  WHERE cnae_1 IN ("13293") 
+     OR cnae_2 IN ("07294")
+  GROUP BY ano
+  ORDER BY ano
+')
+
+
+# extração de ferro: 13102(CNAE1), 07103(CNAE2)
+apv7_ferro <- basedosdados::read_sql('
+  SELECT 
+    ano,
+    COUNT(*) AS empregos_mineracao
+  FROM `basedosdados.br_me_rais.microdados_vinculos`
+  WHERE cnae_1 IN ("13102") 
+     OR cnae_2 IN ("07103")
+  GROUP BY ano
+  ORDER BY ano
+')
+
+
+# extração de ouro: 13242(CNAE1), 07243(CNAE2)
+apv7_ouro <- basedosdados::read_sql('
+  SELECT 
+    ano,
+    COUNT(*) AS empregos_mineracao
+  FROM `basedosdados.br_me_rais.microdados_vinculos`
+  WHERE cnae_1 IN ("13242") 
+     OR cnae_2 IN ("07243")
+  GROUP BY ano
+  ORDER BY ano
+')
+
+
+# preparando o grafico
+apv7_aluminio$metal <- "aluminio"
+apv7_cobre$metal <- "cobre"
+apv7_ferro$metal <- "ferro"
+apv7_ouro$metal <- "ouro"
+#combinando as bases
+dados_combined <- rbind(apv7_aluminio, apv7_cobre, apv7_ferro, apv7_ouro)
+#
+dados_combined$ano <- as.numeric(dados_combined$ano)
+dados_combined$empregos_mineracao <- as.numeric(dados_combined$empregos_mineracao)
+#
+ggplot(dados_combined, aes(x = ano, y = empregos_mineracao / 1000, color = metal)) +
+  geom_line(size = 1.05) +
+  geom_point(size = 1.5) +
+  scale_color_manual(values = c("darkblue", "darkmagenta", "darkgrey", "darkorange")) +
+  theme_minimal() +
+  labs(x = "", y = "Thousands of Jobs", color = "Metal") +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE)) 
+
+
+#
+
+
+
+
+```
+
+Painel de dados por substancia
+
+```{r}
+
+# extração de aluminio: 13218(CNAE1), 07219(CNAE2)
+mi_aluminio<-basedosdados::read_sql('SELECT ano,
+id_municipio, 
+COUNT(*) AS empregos_m, 
+SUM(valor_remuneracaO_media_sm) as w_massa_m,
+AVG(valor_remuneracaO_media_sm) as w_mean_sm_m,
+AVG(tempo_emprego) as w_tempo_m,
+AVG(CAST(faixa_etaria as FLOAT64)) as w_faixa_etaria_media_m,
+FROM `basedosdados.br_me_rais.microdados_vinculos`
+ WHERE cnae_1 IN ("13218") 
+     OR cnae_2 IN ("07219")
+GROUP BY ano, id_municipio
+ORDER BY ano, id_municipio
+                                ')
+
+
+# extração de cobre: 13293(CNAE1), 07294(CNAE2)
+mi_cobre<-basedosdados::read_sql('SELECT ano,
+id_municipio, 
+COUNT(*) AS empregos_m, 
+SUM(valor_remuneracaO_media_sm) as w_massa_m,
+AVG(valor_remuneracaO_media_sm) as w_mean_sm_m,
+AVG(tempo_emprego) as w_tempo_m,
+AVG(CAST(faixa_etaria as FLOAT64)) as w_faixa_etaria_media_m,
+FROM `basedosdados.br_me_rais.microdados_vinculos`
+ WHERE cnae_1 IN ("13293") 
+     OR cnae_2 IN ("07294")
+GROUP BY ano, id_municipio
+ORDER BY ano, id_municipio
+                                ')
+
+
+# extração de ferro: 13102(CNAE1), 07103(CNAE2)
+mi_ferro<-basedosdados::read_sql('SELECT ano,
+id_municipio, 
+COUNT(*) AS empregos_m, 
+SUM(valor_remuneracaO_media_sm) as w_massa_m,
+AVG(valor_remuneracaO_media_sm) as w_mean_sm_m,
+AVG(tempo_emprego) as w_tempo_m,
+AVG(CAST(faixa_etaria as FLOAT64)) as w_faixa_etaria_media_m,
+FROM `basedosdados.br_me_rais.microdados_vinculos`
+ WHERE cnae_1 IN ("13102") 
+     OR cnae_2 IN ("07103")
+GROUP BY ano, id_municipio
+ORDER BY ano, id_municipio
+                                ')
+
+
+# extração de ouro: 13242(CNAE1), 07243(CNAE2)
+mi_ouro<-basedosdados::read_sql('SELECT ano,
+id_municipio, 
+COUNT(*) AS empregos_m, 
+SUM(valor_remuneracaO_media_sm) as w_massa_m,
+AVG(valor_remuneracaO_media_sm) as w_mean_sm_m,
+AVG(tempo_emprego) as w_tempo_m,
+AVG(CAST(faixa_etaria as FLOAT64)) as w_faixa_etaria_media_m,
+FROM `basedosdados.br_me_rais.microdados_vinculos`
+ WHERE cnae_1 IN ("13242") 
+     OR cnae_2 IN ("07243")
+GROUP BY ano, id_municipio
+ORDER BY ano, id_municipio
+                                ')
+
+
+
+```
+
+APENAS UM TESTE!De forma a observar a importancia do criteiro de subatividade_ibge IN ("0510") Entao,testando sem o criterio de subatividade_ibge IN ("0510")
+
+```{r}
+
+mi_teste<-basedosdados::read_sql('SELECT ano,
+id_municipio, 
+COUNT(*) AS empregos_m, 
+SUM(valor_remuneracaO_media_sm) as w_massa_m,
+AVG(valor_remuneracaO_media_sm) as w_mean_sm_m,
+AVG(tempo_emprego) as w_tempo_m,
+AVG(CAST(faixa_etaria as FLOAT64)) as w_faixa_etaria_media_m,
+FROM `basedosdados.br_me_rais.microdados_vinculos`
+ WHERE cnae_1 IN ("13218", "13102", "13242", "13293") 
+     OR cnae_2 IN ("07103", "07243", "07294", "07219")
+GROUP BY ano, id_municipio
+ORDER BY ano, id_municipio
+                                ')
+
+```
+
+Continuando o teste O criterio tinha sido retirado anteriormente,por nao ser possivel diferenciar por substancia
+
+```{r}
+
+# extração de aluminio: 13218(CNAE1), 07219(CNAE2)
+apv7_aluminio_teste <- basedosdados::read_sql('
+  SELECT 
+    ano,
+    COUNT(*) AS empregos_mineracao
+  FROM `basedosdados.br_me_rais.microdados_vinculos`
+  WHERE cnae_1 IN ("13218") 
+  OR cnae_2 IN ("07219")
+  OR subatividade_ibge IN ("0510")
+  GROUP BY ano
+  ORDER BY ano
+')
+
+
+# extração de cobre: 13293(CNAE1), 07294(CNAE2)
+apv7_cobre_teste <- basedosdados::read_sql('
+  SELECT 
+    ano,
+    COUNT(*) AS empregos_mineracao
+  FROM `basedosdados.br_me_rais.microdados_vinculos`
+  WHERE cnae_1 IN ("13293") 
+    OR cnae_2 IN ("07294")
+    OR subatividade_ibge IN ("0510")
+  GROUP BY ano
+  ORDER BY ano
+')
+
+
+# extração de ferro: 13102(CNAE1), 07103(CNAE2)
+apv7_ferro_teste <- basedosdados::read_sql('
+  SELECT 
+    ano,
+    COUNT(*) AS empregos_mineracao
+  FROM `basedosdados.br_me_rais.microdados_vinculos`
+  WHERE cnae_1 IN ("13102") 
+  OR cnae_2 IN ("07103")
+  OR subatividade_ibge IN ("0510")
+  GROUP BY ano
+  ORDER BY ano
+')
+
+
+# extração de ouro: 13242(CNAE1), 07243(CNAE2)
+apv7_ouro_teste <- basedosdados::read_sql('
+  SELECT 
+    ano,
+    COUNT(*) AS empregos_mineracao
+  FROM `basedosdados.br_me_rais.microdados_vinculos`
+  WHERE cnae_1 IN ("13242") 
+    OR cnae_2 IN ("07243")
+    OR subatividade_ibge IN ("0510")
+  GROUP BY ano
+  ORDER BY ano
+')
+
+
+# preparando o grafico
+apv7_aluminio_teste$metal <- "aluminio"
+apv7_cobre_teste$metal <- "cobre"
+apv7_ferro_teste$metal <- "ferro"
+apv7_ouro_teste$metal <- "ouro"
+#combinando as bases
+dados_combined_teste <- rbind(apv7_aluminio_teste, apv7_cobre_teste, apv7_ferro_teste, apv7_ouro_teste)
+#
+dados_combined_teste$ano <- as.numeric(dados_combined_teste$ano)
+dados_combined_teste$empregos_mineracao <- as.numeric(dados_combined_teste$empregos_mineracao)
+#
+ggplot(dados_combined_teste, aes(x = ano, y = empregos_mineracao / 1000, color = metal)) +
+  geom_line(size = 1.05) +
+  geom_point(size = 1.5) +
+  scale_color_manual(values = c("darkblue", "darkmagenta", "darkgrey", "darkorange")) +
+  theme_minimal() +
+  labs(x = "Ano", y = "Thousands of Jobs", color = "Metal") +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE)) 
+
+
+#
+
+
+```
+
+Importando os dados para o excel/csv
+
+```{r}
+library(AER)
+library(writexl)
+
+write.csv(mi,file = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi.csv")
+write.csv(mi_aluminio,file = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi_aluminio.csv")
+write.csv(mi_cobre,file = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi_cobre.csv")
+write.csv(mi_ferro,file = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi_ferro.csv")
+write.csv(mi_ouro,file = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi_ouro.csv")
+write.csv(apv7,file = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/apv7.csv")
+#
+write_xlsx(mi,path = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi.xlsx")
+write_xlsx(mi_aluminio,path = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi_aluminio.xlsx")
+write_xlsx(mi_cobre,path = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi_cobre.xlsx")
+write_xlsx(mi_ferro,path = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi_ferro.xlsx")
+write_xlsx(mi_ouro,path = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi_ouro.xlsx")
+#
+write.table(mi,file = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi.txt")
+write.table(mi_aluminio,file = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi_aluminio.txt")
+write.table(mi_cobre,file = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi_cobre.txt")
+write.table(mi_ferro,file = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi_ferro.txt")
+write.table(mi_ouro,file = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/mi_ouro.txt")
+write.table(apv7,file = "C:/Users/Lcadr/Doutorado/mineracao_projeto/scripts/apv7.txt")
+
+
+```
