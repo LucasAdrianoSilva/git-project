@@ -1,0 +1,194 @@
+### Pacotes necessários
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+library(loadinstall)
+packages <- c("haven", "readr", "ggplot2", "ggrepel", "ggthemes", 
+  "tidyr", "tidyverse", "sidrar", "rbcb", "readxl", "lubridate", 
+  "sjPlot", "sjstats", "broom", "kableExtra", "modelsummary", "kableExtra", "plm", "AER", "zoo", "readr", "ggplot2", "methods", "ggthemes", 
+  "directlabels", "ggrepel", "readxl", "haven", "dplyr", "knitr", "tidyr", 
+  "gghighlight", "fixest", "modelsummary", "basedosdados", "DBI", 
+  "data.table", "did", "lubridate", "stargazer", "bigrquery", "stringi", "sidrar", "viridis", "gtsummary",
+  "broom", "data.table", "sp", "sf", "ggspatial", "marginaleffects")
+lapply(packages, dynamic_require)
+```
+
+# De antemão considerar Difference-in-Differences with multiple time periods
+# link: https://www.sciencedirect.com/science/article/abs/pii/S0304407620303948?via%3Dihub
+
+### Credenciais
+
+```{r}
+set_billing_id("1055074884926")
+bq_auth()
+con <- dbConnect(
+  bigrquery::bigquery(),
+  billing = "1055074884926",
+  project = "My First Project"
+)
+```
+
+# Carregando bases
+
+### Loteria
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+load("treated1.Rda")
+load("treated2.Rda")
+```
+
+### Growth
+
+```{r}
+
+```
+
+### Crime
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+#Sistema de Informação de Agravos de Notificação (SINAN)
+load("vio.Rda")
+h1 <- read_delim("homicidios_atlas.csv",  delim = ";", escape_double = FALSE, trim_ws = TRUE)
+load("populacao.Rda")
+h1$id<-h1$cod
+h1$ano<-h1$período
+pop$id<-pop$id_municipio
+## vou juntar as duas bases 
+h2<-merge(pop, h1, by=c("ano", "id"))
+h2$txh<-100000*(h2$valor/h2$populacao)
+
+#verificacao basica dos dados
+head(h2)
+#valores faltantes
+sum(is.na(h2$txh))
+
+
+```
+
+Manipulações
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+h2$txh<-(h2$valor/h2$populacao)
+b1<-merge(treated1, h2, by="id")
+b2<-merge(treated2, h2, by="id")
+b1$id2<-as.factor(b1$id)
+b2$id2<-as.factor(b2$id)
+b1$uf<-as.factor(b1$sigla_uf)
+b2$uf<-as.factor(b2$sigla_uf)
+b1$lnh<-log(b1$txh+0.001)
+b2$lnh<-log(b2$txh+0.001)
+b1$pop2<-as.numeric(b1$populacao)
+b2$pop2<-as.numeric(b2$populacao)
+b1ouro <- b1 %>% filter(metal=="ouro") 
+b1cobre <- b1 %>% filter(metal=="cobre")
+b1ferro <- b1 %>% filter(metal=="ferro")
+b1bauxita <- b1 %>% filter(metal=="bauxita")
+b2ouro <- b2 %>% filter(metal == "ouro")
+b2cobre <- b2 %>% filter(metal == "cobre")
+b2ferro <- b2 %>% filter(metal == "ferro")
+b2bauxita <- b2 %>% filter(metal == "bauxita")
+b1ouro <- b1ouro %>%
+  mutate(treated = ifelse(grupo == "tratado" & first_ral < ano, 1, 0))
+b2ouro <- b2ouro %>%
+  mutate(treated = ifelse(grupo == "tratado" & first_treated < ano, 1, 0))
+b1cobre <- b1cobre %>%
+  mutate(treated = ifelse(grupo == "tratado" & first_ral < ano, 1, 0))
+b2cobre <- b2cobre %>%
+  mutate(treated = ifelse(grupo == "tratado" & first_treated < ano, 1, 0))
+b1ferro <- b1ferro %>%
+  mutate(treated = ifelse(grupo == "tratado" & first_ral < ano, 1, 0))
+b2ferro <- b2ferro %>%
+  mutate(treated = ifelse(grupo == "tratado" & first_treated < ano, 1, 0))
+b1bauxita <- b1bauxita %>%
+  mutate(treated = ifelse(grupo == "tratado" & first_ral < ano, 1, 0))
+b2bauxita <- b2bauxita %>%
+  mutate(treated = ifelse(grupo == "tratado" & first_treated < ano, 1, 0))
+
+
+vio$id<-as.numeric(vio$id_municipio_ocorrencia)
+pop$id<-as.numeric(pop$id_municipio)
+vio2<-merge(vio, pop, by=c("id", "ano"))
+
+vio2$txv_total<-(vio2$violencia_total/vio2$populacao)
+vio2$txv_mulher<-(vio2$violencia_mulher/vio2$populacao)
+vio2$txv_homem<-(vio2$violencia_homem/vio2$populacao)
+
+
+vio2$pop2<-as.numeric(vio2$populacao)
+vio2$pop2<-as.numeric(vio2$populacao)
+
+
+
+vio3<-merge(vio2, treated2, by="id")
+v2ouro <- vio3 %>% filter(metal=="ouro") 
+v2cobre <- vio3 %>% filter(metal=="cobre") 
+v2bauxita <- vio3 %>% filter(metal=="bauxita") 
+v2ferro <- vio3 %>% filter(metal=="ferro") 
+
+v2cobre <- v2cobre %>%
+  mutate(treated = ifelse(grupo == "tratado" & first_treated < ano, 1, 0))
+v2ferro <- v2ferro %>%
+  mutate(treated = ifelse(grupo == "tratado" & first_treated < ano, 1, 0))
+v2bauxita <- v2bauxita %>%
+  mutate(treated = ifelse(grupo == "tratado" & first_treated < ano, 1, 0))
+v2ouro <- v2ouro %>%
+  mutate(treated = ifelse(grupo == "tratado" & first_treated < ano, 1, 0))
+
+```
+
+# REGRESSOES
+
+
+```{r}
+# Função para criar as variáveis cohort e time_to_treat
+create_cohort_and_time_to_treat <- function(data) {
+  data %>%
+    mutate(cohort = ifelse(treated == 1, first_treated, 2024),
+           time_to_treat = ano - cohort)
+}
+
+# Aplicar a função em cada dataset da lista crime
+b2ouro <- create_cohort_and_time_to_treat(b2ouro)
+b2ferro <- create_cohort_and_time_to_treat(b2ferro)
+b2cobre <- create_cohort_and_time_to_treat(b2cobre)
+b2bauxita <- create_cohort_and_time_to_treat(b2bauxita)
+
+# Aplicar a função em cada dataset da lista empregos
+j2ouro <- create_cohort_and_time_to_treat(j2ouro)
+j2ferro <- create_cohort_and_time_to_treat(j2ferro)
+j2cobre <- create_cohort_and_time_to_treat(j2cobre)
+j2bauxita <- create_cohort_and_time_to_treat(j2bauxita)
+
+# Aplicar a função em cada dataset da lista empregos2
+j2ouro <- create_cohort_and_time_to_treat(j2ouro)  # Já modificado
+j2ferro <- create_cohort_and_time_to_treat(j2ferro)  # Já modificado
+j2cobre <- create_cohort_and_time_to_treat(j2cobre)  # Já modificado
+j2bauxita <- create_cohort_and_time_to_treat(j2bauxita)  # Já modificado
+
+# Aplicar a função em cada dataset da lista salarios
+j2ouro <- create_cohort_and_time_to_treat(j2ouro)  # Já modificado
+j2ferro <- create_cohort_and_time_to_treat(j2ferro)  # Já modificado
+j2cobre <- create_cohort_and_time_to_treat(j2cobre)  # Já modificado
+j2bauxita <- create_cohort_and_time_to_treat(j2bauxita)  # Já modificado
+
+# Aplicar a função em cada dataset da lista empregos_trans
+j2ouro <- create_cohort_and_time_to_treat(j2ouro)  # Já modificado
+j2ferro <- create_cohort_and_time_to_treat(j2ferro)  # Já modificado
+j2cobre <- create_cohort_and_time_to_treat(j2cobre)  # Já modificado
+j2bauxita <- create_cohort_and_time_to_treat(j2bauxita)  # Já modificado
+
+# Aplicar a função em cada dataset da lista desmatamento
+des2ouro <- create_cohort_and_time_to_treat(des2ouro)
+des2ferro <- create_cohort_and_time_to_treat(des2ferro)
+des2cobre <- create_cohort_and_time_to_treat(des2cobre)
+des2bauxita <- create_cohort_and_time_to_treat(des2bauxita)
+des3 <- create_cohort_and_time_to_treat(des3)
+des2ama <- create_cohort_and_time_to_treat(des2ama)
+des2ama_ouro <- create_cohort_and_time_to_treat(des2ama_ouro)
+
+# O código cria variáveis `cohort` e `time_to_treat` para todos os datasets.
+
+```
