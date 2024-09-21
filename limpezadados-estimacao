@@ -38,9 +38,8 @@ cbo2002<-basedosdados::read_sql('SELECT * FROM `basedosdados.br_bd_diretorios_br
 
 ```
 
-A estrutura dos dados muda. Em 1985 o subsetor_ibge não é pelo número (01), mas pelo nome "EXTR MINERAL".
-
-Olhando a base de vínculos.
+# A estrutura dos dados muda. Em 1985 o subsetor_ibge não é pelo número (01), mas pelo nome "EXTR MINERAL".
+# Olhando a base de vínculos.
 
 ```{r}
 op<-basedosdados::read_sql('SELECT * 
@@ -61,9 +60,8 @@ AND ano=2022
                                 ')
 ```
 
-## Coletando os dados
-
-Primeiro vamos coletar os dados para todos os setores das cidades
+# Coletando os dados
+# Primeiro coletando os dados para todos os setores das cidades
 
 ```{r}
 rt<-basedosdados::read_sql('SELECT ano,
@@ -79,11 +77,7 @@ ORDER BY ano, id_municipio
                                 ')
 ```
 
-Agora a gente que fazer isso só para a mineração
-
-Ou seja, a gente tem que aplicar o "WHERE" nos lugares certos... e aqui que começa a confusão!
-
-## Como que é o valor do subsetor da mineração em relação ao Brasil?
+Agora fazendo isso só para a mineração
 
 ```{r}
 pv1 <- basedosdados::read_sql('
@@ -102,8 +96,6 @@ ggplot(pv1, aes(y=as.numeric(empregos_mineracao/1000), x=as.numeric(ano))) + geo
 
 ```
 
-Como parece ter uma descontinuidade entre 1994 e 2014, a gente tem que ver o que acontece nestes anos.
-
 ```{r}
 opv1994<-basedosdados::read_sql('SELECT * 
 FROM `basedosdados.br_me_rais.microdados_vinculos`
@@ -112,30 +104,9 @@ AND ano=1994
                                 ')
 ```
 
-Os dados do subsetor_ibge somem. Ou seja, a gente tem que fazer o filtro pela CNAE mesmo.\
-Mais trabalhoso, mas vai ficar melhor.
 
-As CNAES de interesse são:
+Escolhendo CNAES de interesse, inicialmente a escolha foi para ouro, ferro, bauxita e cobre
 
-CNAE1
-
-13218 – extração de alumío
-
-13102 – extração de ferro
-
-13242 – extração de ouro (minério de metais preciosos)
-
-13293 – extração de metálicos não-ferrosos (cobre)
-
-CNAE2
-
-07103 – Extração de ferro
-
-07243 – Extração de minério de metais preciosos
-
-07294 – Extração de minerais metálicos não-ferrosos
-
-07219 – Extração de minério de alumínio
 
 ```{r}
 apv7 <- basedosdados::read_sql('
