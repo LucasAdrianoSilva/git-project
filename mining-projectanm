@@ -38,13 +38,8 @@ load("treated1.Rda")
 load("treated2.Rda")
 ```
 
-### Growth
 
-```{r}
-
-```
-
-### Crime
+### Analisando o efeito da mineração sobre o Crime
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
 
@@ -192,3 +187,23 @@ des2ama_ouro <- create_cohort_and_time_to_treat(des2ama_ouro)
 # O código cria variáveis `cohort` e `time_to_treat` para todos os datasets.
 
 ```
+
+
+```{r}
+
+crime<- list(
+"crime - ouro" = feols( log(txh+0.001) ~ treated:factor(time_to_treat):factor(cohort) |  id  +  ano , data = b2ouro, weights = b2ouro$pop2), 
+"crime - ferro" = feols( log(txh+0.001) ~ treated:factor(time_to_treat):factor(cohort) |  id  +  ano , data = b2ferro, weights = b2ferro$pop2), 
+"crime - cobre" = feols( log(txh+0.001) ~ treated:factor(time_to_treat):factor(cohort) |  id  +  ano , data = b2cobre, weights = b2cobre$pop2), 
+"crime - bauxita" = feols( log(txh+0.001) ~ treated:factor(time_to_treat):factor(cohort)|  id  +  ano , data = b2bauxita, weights = b2bauxita$pop2)
+)
+
+msummary(crime, stars = c('*' = 0.1, '**' = 0.05, '***' = 0.01))
+
+c1 = feols( txh ~ treated:factor(time_to_treat):factor(cohort) |  id  +  ano , data = b2ouro, weights = b2ouro$pop2)
+
+sc1<-slopes(
+  c1, 
+  variables = "treated", 
+  by        = "treated"
+  )
