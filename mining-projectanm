@@ -13,8 +13,8 @@ packages <- c("haven", "readr", "ggplot2", "ggrepel", "ggthemes",
 lapply(packages, dynamic_require)
 ```
 
-# De antemão considerar Difference-in-Differences with multiple time periods
-# link: https://www.sciencedirect.com/science/article/abs/pii/S0304407620303948?via%3Dihub
+# De antemão entender Difference-in-Differences with multiple time periods
+# referencia: https://www.sciencedirect.com/science/article/abs/pii/S0304407620303948?via%3Dihub
 
 ### Credenciais
 
